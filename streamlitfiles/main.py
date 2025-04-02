@@ -225,6 +225,7 @@ ax.set_ylabel("Price")
 ax.set_yticks([0, 1, 2, 3, 4, 5])
 
 # Rotate x-axis labels for better readability
+ax.set_xticks(range(len(ax.get_xticklabels())))
 ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
 ax.set_title("Business Rating vs. Price Range")
 

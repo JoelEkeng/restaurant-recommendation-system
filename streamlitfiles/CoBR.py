@@ -104,11 +104,11 @@ if not filtered_businesses.empty:
         except IndexError:
             return pd.DataFrame({'name': ['No recommendations found'], 'categories': ['N/A']})
 
-    if st.button('Get Recommendations'):
-        recommendations = get_recommendations(state_choice)
-        st.write('Top Recommended Restaurants:')
-        for _, row in recommendations.iterrows():
-            st.write(f"- {row['name']} ({row['categories']})")
+    
+    recommendations = get_recommendations(state_choice)
+    st.write(f'Top Recommended Restaurants in {state_choice} are:')
+    for _, row in recommendations.iterrows():
+        st.write(f"- {row['name']} ({row['categories']})")
 else:
     st.warning("Please enter a valid state abbreviation.")
 

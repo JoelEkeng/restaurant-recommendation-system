@@ -5,7 +5,6 @@ import ast
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import precision_score, recall_score, f1_score
 
 @st.cache_data
 def load_business_data():
@@ -16,36 +15,18 @@ def load_business_data():
 
 data = load_business_data()
 
+# Data Cleaning and Preprocessing
 data.rename(columns={'stars_x': 'rating', 'stars_y': 'b/s_rating'}, inplace=True)
-
 data.fillna({'address': 'Not-Available', 
              'attributes': 'Not-Available', 
              'categories': 'Not-Available', 
              'hours': 'Not-Available'}, inplace=True)
 
-data['location'] = data[['city', 'state', 'address']].apply(
-    lambda x: f"State:{x['state']}, City:{x['city']}, Address:{x['address']} ", axis=1)
+data['location'] = data['state'].fillna('') + ', ' + data['city'].fillna('') + ', ' + data['address'].fillna('')
 
-# Drop the original columns after combining
-data.drop(columns=['state', 'city', 'address'], inplace=True)
-
-# Generate user ID mapping
-ids = data[['user_id']].drop_duplicates().reset_index(drop=True).copy()
-ids = ids.reset_index()
-data = pd.merge(data, ids, how='left', on='user_id').drop('user_id', axis=1).rename(columns={'index': 'user_id'})
-
-# Adjust user ID to start from 1
-data['user_id'] = data['user_id'] + 1
-
-# Filter only restaurants
-data = data[data['categories'].str.contains('Restaurants', na=False)].reset_index(drop=True)
-
-# Drop irrelevant columns
-cols_to_drop = ['review_id', 'useful', 'postal_code', 'funny', 'cool', 'is_open', 'date']
-data.drop(columns=cols_to_drop, inplace=True)
-
-# Ensure required columns are present
-data = data[['business_id', 'name', 'categories', 'attributes', 'location', 'rating', 'user_id', 'text']]
+# Drop unnecessary columns
+cols_to_drop = ['review_id', 'useful', 'postal_code', 'funny', 'cool', 'is_open', 'date', 'state', 'city', 'address']
+data.drop(columns=cols_to_drop, inplace=True, errors='ignore')
 
 # Safely evaluate attributes column
 def safe_literal_eval(x):
@@ -54,61 +35,63 @@ def safe_literal_eval(x):
     except:
         return {}
 
-data['categories'] = data['categories'].apply(lambda x: [] if x == 'Not-Available' else x.split(', '))
+data['categories'] = data['categories'].apply(lambda x: x.split(', ') if x != 'Not-Available' else [])
 data['attributes'] = data['attributes'].apply(safe_literal_eval)
-
-# Extract price range from attributes
 data['price_range'] = data['attributes'].apply(lambda x: int(x.get('RestaurantsPriceRange2', 0)) if isinstance(x, dict) else 0)
 
-# User input for state choice
+# Filter only restaurants
+data = data[data['categories'].apply(lambda x: 'Restaurants' in x)]
+
+# User Input for State and Price Range
 st.subheader('Select State for Recommendations')
 state_choice = st.text_input('Enter the state abbreviation (e.g., PA, AZ, CA):').strip().upper()
 
+if state_choice:
+    filtered_businesses = data[data['location'].str.contains(state_choice, case=False, na=False)]
 
-pa_businesses = data[data['location'].str.contains(f'State:{state_choice}', case=False, na=False)]
+    if not filtered_businesses.empty:
+        st.subheader('Select Price Range')
+        price_range = st.slider('Select price range (1: Lowest, 4: Highest)', min_value=1, max_value=4, value=(1, 4))
 
-# Filter businesses by selected state
-filtered_businesses = pa_businesses[pa_businesses['location'].str.contains(f'State:{state_choice}', case=False, na=False)]
+        # Filter by price range
+        filtered_businesses = filtered_businesses[
+            (filtered_businesses['price_range'] >= price_range[0]) & 
+            (filtered_businesses['price_range'] <= price_range[1])
+        ]
 
-if not filtered_businesses.empty:
-    # User input for price range
-    st.subheader('Select Price Range')
-    price_range = st.slider('Select price range (1: Lowest, 4: Highest)', min_value=1, max_value=4, value=(1, 4))
+        if not filtered_businesses.empty:
+            # Combine features for content-based filtering
+            filtered_businesses['combined_features'] = (
+                filtered_businesses['categories'].apply(lambda x: ' '.join(x)) + ' ' + filtered_businesses['text']
+            )
 
-    # Filter businesses by price range
-    filtered_businesses = filtered_businesses[(filtered_businesses['price_range'] >= price_range[0]) &
-                                              (filtered_businesses['price_range'] <= price_range[1])]
+            # Vectorize text data
+            tfidf = TfidfVectorizer(stop_words='english')
+            tfidf_matrix = tfidf.fit_transform(filtered_businesses['combined_features'])
 
-    # Combine text features for content-based filtering
-    filtered_businesses.loc[:, 'combined_features'] = filtered_businesses['categories'].astype(str) + ' ' + filtered_businesses['text']
+            @st.cache_data
+            def get_recommendations(query):
+                try:
+                    idx = filtered_businesses[filtered_businesses['name'].str.contains(query, case=False, na=False)].index[0]
+                    cosine_sim = linear_kernel(tfidf_matrix[idx:idx+1], tfidf_matrix).flatten()
+                    sim_scores = list(enumerate(cosine_sim))
+                    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:11]
+                    business_indices = [i[0] for i in sim_scores]
+                    return filtered_businesses.iloc[business_indices][['name', 'categories']]
+                except IndexError:
+                    return pd.DataFrame({'name': ['No recommendations found'], 'categories': ['N/A']})
 
-
-    # Vectorize text data
-    tfidf = TfidfVectorizer(stop_words='english')
-    tfidf_matrix = tfidf.fit_transform(filtered_businesses['combined_features'])
-
-    # Compute cosine similarity matrix
-    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-
-    @st.cache_data
-    def get_recommendations(query, cosine_sim=cosine_sim):
-        try:
-            idx = filtered_businesses[filtered_businesses['name'].str.contains(query, case=False, na=False)].index[0]
-            sim_scores = list(enumerate(cosine_sim[idx]))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-            sim_scores = sim_scores[1:11]  # Exclude the business itself
-            business_indices = [i[0] for i in sim_scores]
-            return filtered_businesses[['name', 'categories']].iloc[business_indices]
-        except IndexError:
-            return pd.DataFrame({'name': ['No recommendations found'], 'categories': ['N/A']})
-
-    
-    recommendations = get_recommendations(state_choice)
-    st.write(f'Top Recommended Restaurants in {state_choice} are:')
-    for _, row in recommendations.iterrows():
-        st.write(f"- {row['name']} ({row['categories']})")
+            recommendations = get_recommendations(state_choice)
+            st.write(f'Top Recommended Restaurants in {state_choice}:')
+            for _, row in recommendations.iterrows():
+                st.write(f"- {row['name']} ({row['categories']})")
+        else:
+            st.warning("No restaurants found for the selected price range.")
+    else:
+        st.warning("No restaurants found for the selected state.")
 else:
-    st.warning("Please enter a valid state abbreviation.")
+    st.info("Please enter a valid state abbreviation.")
+
 
 
 # # Create a TF-IDF vectorizer to convert text data into numerical vectors

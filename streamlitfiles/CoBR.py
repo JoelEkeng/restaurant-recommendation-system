@@ -7,8 +7,6 @@ from sklearn.metrics.pairwise import linear_kernel
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import precision_score, recall_score, f1_score
 
-st.title("Content Based Filtering Methodology")
-
 @st.cache_data
 def load_business_data():
     business = pd.read_csv("data/business.csv")

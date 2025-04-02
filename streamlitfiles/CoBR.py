@@ -68,44 +68,47 @@ state_choice = st.text_input('Enter the state abbreviation (e.g., PA, AZ, CA):')
 
 
 pa_businesses = data[data['location'].str.contains(f'State:{state_choice}', case=False, na=False)]
-st.write(f"Found {len(pa_businesses)} businesses in {state_choice}.")
 
-# User input for price range
-st.subheader('Select Price Range')
-price_range = st.slider('Select price range (1: Lowest, 4: Highest)', min_value=1, max_value=4, value=(1, 4))
+# Filter businesses by selected state
+filtered_businesses = pa_businesses[pa_businesses['location'].str.contains(f'State:{state_choice}', case=False, na=False)]
 
- # Filter businesses by price range
-filtered_businesses = pa_businesses[(pa_businesses['price_range'] >= price_range[0]) & 
-                                            (pa_businesses['price_range'] <= price_range[1])]
+if not filtered_businesses.empty:
+    # User input for price range
+    st.subheader('Select Price Range')
+    price_range = st.slider('Select price range (1: Lowest, 4: Highest)', min_value=1, max_value=4, value=(1, 4))
 
+    # Filter businesses by price range
+    filtered_businesses = filtered_businesses[(filtered_businesses['price_range'] >= price_range[0]) &
+                                              (filtered_businesses['price_range'] <= price_range[1])]
 
-# Combine text features for content-based filtering
-filtered_businesses['combined_features'] = filtered_businesses['categories'].astype(str) + ' ' + filtered_businesses['text']
-
-# Vectorize text data
-tfidf = TfidfVectorizer(stop_words='english')
-tfidf_matrix = tfidf.fit_transform(filtered_businesses['combined_features'])
-
-# Compute cosine similarity matrix
-cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-
-@st.cache_data
-def get_recommendations(query, cosine_sim=cosine_sim):
-    try:
-        idx = filtered_businesses[filtered_businesses['name'].str.contains(query, case=False, na=False)].index[0]
-        sim_scores = list(enumerate(cosine_sim[idx]))
-        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-        sim_scores = sim_scores[1:11]  # Exclude the business itself
-        business_indices = [i[0] for i in sim_scores]
-        return filtered_businesses['name'].iloc[business_indices].tolist()
-    except IndexError:
-        return ['No recommendations found for the given input.']
+    # Combine text features for content-based filtering
+    filtered_businesses.loc[:, 'combined_features'] = filtered_businesses['categories'].astype(str) + ' ' + filtered_businesses['text']
 
 
-recommendations = get_recommendations(state_choice)
-st.write('Top Recommended Restaurants:')
-for rec in recommendations:
-    st.write(f'- {rec}')
+    # Vectorize text data
+    tfidf = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = tfidf.fit_transform(filtered_businesses['combined_features'])
+
+    # Compute cosine similarity matrix
+    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+
+    @st.cache_data
+    def get_recommendations(query, cosine_sim=cosine_sim):
+        try:
+            idx = filtered_businesses[filtered_businesses['name'].str.contains(query, case=False, na=False)].index[0]
+            sim_scores = list(enumerate(cosine_sim[idx]))
+            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+            sim_scores = sim_scores[1:11]  # Exclude the business itself
+            business_indices = [i[0] for i in sim_scores]
+            return filtered_businesses[['name', 'categories']].iloc[business_indices]
+        except IndexError:
+            return pd.DataFrame({'name': ['No recommendations found'], 'categories': ['N/A']})
+
+    if st.button('Get Recommendations'):
+        recommendations = get_recommendations(state_choice)
+        st.write('Top Recommended Restaurants:')
+        for _, row in recommendations.iterrows():
+            st.write(f"- {row['name']} ({row['categories']})")
 else:
     st.warning("Please enter a valid state abbreviation.")
 

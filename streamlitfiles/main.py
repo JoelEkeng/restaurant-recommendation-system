@@ -16,7 +16,7 @@ st.write("2. Collaborative Filtering: This system recommends resturants based on
 st.write("3. Hybrid Filtering: This system recommends resturants based on the similarity of the resturants and the users.")
 
 
-st.title("Visualization of the first 10 of Data Sets.")
+st.title("Data Visualizations")
 
 
 business= pd.read_csv("data/business.csv")

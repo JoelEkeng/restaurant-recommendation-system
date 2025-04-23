@@ -28,8 +28,8 @@ review=pd.read_csv("data/review.csv")
 review.head(10)
 
 tab1, tab2 = st.tabs(["Business", "Reviews"])
-tab1.dataframe(business, height=450, use_container_width=True)
-tab2.dataframe(review, height=450, use_container_width=True)
+tab1.dataframe(business.head(20), height=450, use_container_width=True)
+tab2.dataframe(review.head(20), height=450, use_container_width=True)
 
 
 st.title("Merging the two datasets on the basis of business_id")

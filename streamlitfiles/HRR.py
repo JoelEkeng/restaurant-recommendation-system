@@ -85,7 +85,7 @@ def train_collaborative_model(data):
         
     try:
         reader = Reader(rating_scale=(1, 5))
-        dataset = Dataset.load_from_df(data[['user_id', 'business_id', 'rating']], reader)
+        dataset = Dataset.load_from_df(data[['user_id', 'business_id']], reader)
         trainset = dataset.build_full_trainset()
         algo = SVD()
         algo.fit(trainset)
